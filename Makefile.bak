@@ -1,0 +1,135 @@
+PACKAGE=github.intuit.com/kubernetes/cd-guard
+CURRENT_DIR=$(shell pwd)
+DIST_DIR=${CURRENT_DIR}/release
+CLI_NAME=cd-guard
+
+VERSION=$(shell cat ${CURRENT_DIR}/VERSION)
+BUILD_DATE=$(shell date -u +'%Y-%m-%dT%H:%M:%SZ')
+GIT_COMMIT=$(shell git rev-parse HEAD)
+GIT_TAG=$(shell if [ -z "`git status --porcelain`" ]; then git describe --exact-match --tags HEAD 2>/dev/null; fi)
+GIT_TREE_STATE=$(shell if [ -z "`git status --porcelain`" ]; then echo "clean" ; else echo "dirty"; fi)
+PACKR_CMD=$(shell if [ "`which packr`" ]; then echo "packr"; else echo "go run vendor/github.com/gobuffalo/packr/packr/main.go"; fi)
+
+PATH:=$(PATH):$(PWD)/hack
+
+# docker image publishing options
+DOCKER_PUSH?=false
+IMAGE_TAG?=latest
+# perform static compilation
+STATIC_BUILD?=true
+# build development images
+DEV_IMAGE?=false
+
+override LDFLAGS += \
+  -X ${PACKAGE}.version=${VERSION} \
+  -X ${PACKAGE}.buildDate=${BUILD_DATE} \
+  -X ${PACKAGE}.gitCommit=${GIT_COMMIT} \
+  -X ${PACKAGE}.gitTreeState=${GIT_TREE_STATE}
+
+ifeq (${STATIC_BUILD}, true)
+override LDFLAGS += -extldflags "-static"
+endif
+
+ifneq (${GIT_TAG},)
+IMAGE_TAG=${GIT_TAG}
+LDFLAGS += -X ${PACKAGE}.gitTag=${GIT_TAG}
+endif
+
+ifeq (${DOCKER_PUSH},true)
+ifndef IMAGE_NAMESPACE
+$(error IMAGE_NAMESPACE must be set to push images (e.g. IMAGE_NAMESPACE=kubernetes))
+endif
+endif
+
+ifdef IMAGE_NAMESPACE
+IMAGE_PREFIX=${IMAGE_NAMESPACE}/
+endif
+
+.PHONY: all
+all: cli image
+
+.PHONY: cli
+cli: clean-debug
+	CGO_ENABLED=0 ${PACKR_CMD} build -v -i -ldflags '${LDFLAGS}' -o ${DIST_DIR}/${CLI_NAME} ./cmd/cd-guard.go
+
+.PHONY: release-cli
+release-cli: clean-debug image
+	docker create --name tmp-cd-guard-linux $(IMAGE_PREFIX)cd-guard:$(IMAGE_TAG)
+	docker cp tmp-cd-guard-linux:/usr/local/bin/cd-guard ${DIST_DIR}/cd-guard-linux-amd64
+	docker cp tmp-cd-guard-linux:/usr/local/bin/cd-guard-darwin-amd64 ${DIST_DIR}/cd-guard-darwin-amd64
+	docker rm tmp-cd-guard-linux
+
+.PHONY: manifests
+manifests:
+	./hack/update-manifests.sh
+
+.PHONY: image
+ifeq ($(DEV_IMAGE), true)
+# The "dev" image builds the binaries from the users desktop environment (instead of in Docker)
+# which speeds up builds. Dockerfile.dev needs to be copied into release to perform the build, since
+# the release directory is under .dockerignore.
+image: packr
+	docker build -t cd-guard-base --target cd-guard-base .
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 release/packr build -v -i -ldflags '${LDFLAGS}' -o ${DIST_DIR}/cd-guard ./cmd/cd-guard.go
+#	cp Dockerfile.dev release
+#	docker build -t $(IMAGE_PREFIX)cd-guard:$(IMAGE_TAG) -f release/Dockerfile.dev release
+#else
+#image:
+#	docker build -t $(IMAGE_PREFIX)cd-guard:$(IMAGE_TAG) .
+endif
+	@if [ "$(DOCKER_PUSH)" = "true" ] ; then docker push $(IMAGE_PREFIX)cd-guard:$(IMAGE_TAG) ; fi
+
+.PHONY: builder-image
+builder-image:
+	docker build  -t $(IMAGE_PREFIX)argo-cd-ci-builder:$(IMAGE_TAG) --target builder .
+	docker push $(IMAGE_PREFIX)argo-cd-ci-builder:$(IMAGE_TAG)
+
+.PHONY: dep-ensure
+dep-ensure:
+	dep ensure -no-vendor
+
+.PHONY: lint
+lint:
+	# golangci-lint does not do a good job of formatting imports
+	goimports -local github.com/argoproj/argo-cd -w `find . ! -path './vendor/*' ! -path './pkg/client/*' -type f -name '*.go'`
+	golangci-lint run --fix --verbose
+
+.PHONY: build
+build:
+	go build -v `go list ./... | grep -v 'resource_customizations\|test/e2e'`
+
+.PHONY: test
+test:
+	go test -v -covermode=count -coverprofile=coverage.out `go list ./... | grep -v "test/e2e"`
+
+.PHONY: cover
+cover:
+	go tool cover -html=coverage.out
+
+# Cleans VSCode debug.test files from sub-dirs to prevent them from being included in packr boxes
+.PHONY: clean-debug
+clean-debug:
+	-find ${CURRENT_DIR} -name debug.test | xargs rm -f
+
+.PHONY: clean
+clean: clean-debug
+	-rm -rf ${CURRENT_DIR}/release
+
+.PHONY: start
+start:
+	killall goreman || true
+	kubens cd-guard
+	goreman start
+
+.PHONY: pre-commit
+pre-commit: dep-ensure codegen build lint test
+
+.PHONY: release-precheck
+release-precheck: manifests
+	@if [ "$(GIT_TREE_STATE)" != "clean" ]; then echo 'git tree state is $(GIT_TREE_STATE)' ; exit 1; fi
+	@if [ -z "$(GIT_TAG)" ]; then echo 'commit must be tagged to perform release' ; exit 1; fi
+	@if [ "$(GIT_TAG)" != "v`cat VERSION`" ]; then echo 'VERSION does not match git tag'; exit 1; fi
+
+.PHONY: release
+release: release-precheck pre-commit image release-cli
+

@@ -654,7 +654,20 @@ func verifyIngressServicePort(ingress *unstructured.Unstructured, ingressName st
 		if backendObj != nil && reflect.TypeOf(backendObj).String() == "map[string]interface {}" {
 			backend := backendObj.(map[string]interface{})
 			if backend["serviceName"] != nil && backend["servicePort"] != nil {
-				return strings.EqualFold(backend["serviceName"].(string), serviceName) && string(backend["servicePort"].(int)) == port
+				var portStr string
+				switch v := backend["servicePort"].(type) {
+				case int:
+					portStr = strconv.Itoa(v)
+				case int64:
+					portStr = strconv.FormatInt(v, 10)
+				case string:
+					portStr = v
+				default:
+					portStr = fmt.Sprintf("%v", v)
+				}
+				if strings.EqualFold(backend["serviceName"].(string), serviceName) && portStr == port {
+					return true
+				}
 			}
 		}
 
@@ -678,7 +691,18 @@ func verifyIngressServicePort(ingress *unstructured.Unstructured, ingressName st
 									if path["backend"] != nil && reflect.TypeOf(path["backend"]).String() == "map[string]interface {}" {
 										backend := path["backend"].(map[string]interface{})
 										if backend["serviceName"] != nil && backend["servicePort"] != nil {
-											if strings.EqualFold(backend["serviceName"].(string), serviceName) && strconv.FormatInt(backend["servicePort"].(int64), 10) == port {
+											var portStr string
+											switch v := backend["servicePort"].(type) {
+											case int:
+												portStr = strconv.Itoa(v)
+											case int64:
+												portStr = strconv.FormatInt(v, 10)
+											case string:
+												portStr = v
+											default:
+												portStr = fmt.Sprintf("%v", v)
+											}
+											if strings.EqualFold(backend["serviceName"].(string), serviceName) && portStr == port {
 												return true
 											}
 										}

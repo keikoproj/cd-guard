@@ -108,8 +108,6 @@ type client struct {
 func NewClient(opts *ClientOptions) (Client, error) {
 	var c client
 	localCfg, err := localconfig.ReadLocalConfig(opts.ConfigPath)
-	fmt.Printf("LocalCfg '%s' \n", opts.ConfigPath)
-
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +126,6 @@ func NewClient(opts *ClientOptions) (Client, error) {
 					return nil, err
 				}
 			}
-			fmt.Printf("ServerAddr '%s' \n", c.ServerAddr)
 			c.PlainText = configCtx.Server.PlainText
 			c.Insecure = configCtx.Server.Insecure
 			c.GRPCWeb = configCtx.Server.GRPCWeb

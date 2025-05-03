@@ -1,0 +1,57 @@
+name: Unit Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    name: Run Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          check-latest: true
+
+      - name: Cleanup vendor directory
+        run: |
+          # Remove existing vendor directory to ensure clean state
+          rm -rf vendor
+
+      - name: Install dependencies and sync vendor
+        run: |
+          # Pin specific versions required by k8s components
+          go get github.com/google/cel-go@v0.22.0
+          go get google.golang.org/protobuf@v1.30.0
+          go get github.com/golang/protobuf@v1.5.3
+          # Sync the vendor directory
+          go mod tidy
+          go mod vendor
+
+      - name: Run tests with coverage
+        run: |
+          go test ./... -v -mod=vendor -coverprofile=coverage.out -covermode=atomic
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.out
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+          verbose: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload coverage as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-coverage
+          path: coverage.out
+          if-no-files-found: warn

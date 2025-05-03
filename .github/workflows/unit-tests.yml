@@ -20,11 +20,19 @@ jobs:
           go-version: '1.24'
           check-latest: true
 
+      - name: Cleanup vendor directory
+        run: |
+          # Remove existing vendor directory to ensure clean state
+          rm -rf vendor
+
       - name: Install dependencies and sync vendor
         run: |
-          # Pin specific version of cel-go as required by k8s components
+          # Pin specific versions required by k8s components
           go get github.com/google/cel-go@v0.22.0
+          go get google.golang.org/protobuf@v1.30.0
+          go get github.com/golang/protobuf@v1.5.3
           # Sync the vendor directory
+          go mod tidy
           go mod vendor
 
       - name: Run tests

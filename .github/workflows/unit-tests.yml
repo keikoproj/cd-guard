@@ -39,7 +39,17 @@ jobs:
         run: |
           go test ./... -v -mod=vendor -coverprofile=coverage.out -covermode=atomic
 
-      - name: Upload coverage
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.out
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+          verbose: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload coverage as artifact
         uses: actions/upload-artifact@v4
         with:
           name: code-coverage

@@ -35,12 +35,13 @@ jobs:
           go mod tidy
           go mod vendor
 
-      - name: Run tests
-        run: go test ./... -v -mod=vendor
+      - name: Run tests with coverage
+        run: |
+          go test ./... -v -mod=vendor -coverprofile=coverage.out -covermode=atomic
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
         with:
           name: code-coverage
           path: coverage.out
-          if-no-files-found: ignore
+          if-no-files-found: warn

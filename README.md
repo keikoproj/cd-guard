@@ -1,4 +1,6 @@
 # cd-guard
+[![codecov](https://codecov.io/gh/keikoproj/cd-guard/branch/main/graph/badge.svg)](https://codecov.io/gh/keikoproj/cd-guard)
+
 Continuous Delivery Guard is to protected the deployment, make sure the deployment are going well. 
 It includes bunch of validations which OPA can not cover, for example, HPA, Ingress and PDB validations
 It needs to valid multiple objects and do small extra modification.
@@ -63,5 +65,3 @@ In Jenkinsfile
 |---|---|---|---|
 | Was replicas  | NONE   | Error | Apply change|
 | Was HPA   |NONE| Error|Good|
-
-
